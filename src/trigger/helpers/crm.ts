@@ -1,4 +1,4 @@
-import { LeadData } from "./sheets.js";
+﻿import { LeadData } from "./n8n-mcp.js";
 
 interface ZohoAccessTokenResponse {
   access_token: string;
@@ -31,7 +31,7 @@ async function getZohoAccessToken(): Promise<string> {
 
     return data.access_token;
   } catch (error) {
-    console.error("❌ Zoho Auth Token Error:", error);
+    console.error("âŒ Zoho Auth Token Error:", error);
     throw error;
   }
 }
@@ -47,7 +47,7 @@ export async function createZohoBiginDeal(lead: LeadData): Promise<void> {
     !process.env.ZOHO_CLIENT_ID ||
     process.env.ZOHO_CLIENT_ID === "placeholder_client_id"
   ) {
-    console.warn("⚠️ Zoho CRM credentials not set. Skipping Zoho Deal creation.");
+    console.warn("âš ï¸ Zoho CRM credentials not set. Skipping Zoho Deal creation.");
     return;
   }
 
@@ -58,7 +58,7 @@ export async function createZohoBiginDeal(lead: LeadData): Promise<void> {
       "Content-Type": "application/json",
     };
 
-    console.log(`💼 Connecting to Zoho Bigin for company: ${lead.company_name}`);
+    console.log(`ðŸ’¼ Connecting to Zoho Bigin for company: ${lead.company_name}`);
 
     // Step 1: Search or Create Account (Company)
     let accountId = "";
@@ -68,7 +68,7 @@ export async function createZohoBiginDeal(lead: LeadData): Promise<void> {
 
     if (searchAccountData.data && searchAccountData.data.length > 0) {
       accountId = searchAccountData.data[0].id;
-      console.log(`✅ Existing Zoho Account found: ${accountId}`);
+      console.log(`âœ… Existing Zoho Account found: ${accountId}`);
     } else {
       const createAccountUrl = "https://www.zohoapis.com/bigin/v1/Accounts";
       const accountBody = {
@@ -93,7 +93,7 @@ export async function createZohoBiginDeal(lead: LeadData): Promise<void> {
       }
 
       accountId = createAccountData.data[0].details.id;
-      console.log(`✅ Created new Zoho Account: ${accountId}`);
+      console.log(`âœ… Created new Zoho Account: ${accountId}`);
     }
 
     // Step 2: Search or Create Contact
@@ -104,7 +104,7 @@ export async function createZohoBiginDeal(lead: LeadData): Promise<void> {
 
     if (searchContactData.data && searchContactData.data.length > 0) {
       contactId = searchContactData.data[0].id;
-      console.log(`✅ Existing Zoho Contact found: ${contactId}`);
+      console.log(`âœ… Existing Zoho Contact found: ${contactId}`);
     } else {
       const createContactUrl = "https://www.zohoapis.com/bigin/v1/Contacts";
       const contactBody = {
@@ -133,7 +133,7 @@ export async function createZohoBiginDeal(lead: LeadData): Promise<void> {
       }
 
       contactId = createContactData.data[0].details.id;
-      console.log(`✅ Created new Zoho Contact: ${contactId}`);
+      console.log(`âœ… Created new Zoho Contact: ${contactId}`);
     }
 
     // Step 3: Create Deal associated with the Account & Contact
@@ -175,9 +175,10 @@ export async function createZohoBiginDeal(lead: LeadData): Promise<void> {
       throw new Error(`Failed to create Zoho Deal: ${JSON.stringify(createDealData)}`);
     }
 
-    console.log(`✅ Zoho Deal created successfully: ${createDealData.data[0].details.id}`);
+    console.log(`âœ… Zoho Deal created successfully: ${createDealData.data[0].details.id}`);
   } catch (error) {
-    console.error("❌ Zoho CRM Error:", error);
+    console.error("âŒ Zoho CRM Error:", error);
     throw new Error(`Failed to update Zoho Bigin CRM: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
+

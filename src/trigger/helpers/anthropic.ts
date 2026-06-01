@@ -1,8 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { LeadData } from "./sheets.js";
+﻿import Anthropic from "@anthropic-ai/sdk";
+import { LeadData } from "./n8n-mcp.js";
 import { ScrapedData } from "./scraper.js";
 
-// Full Website Audit System Prompt — The Dare Network (exact Claude Desktop version)
+// Full Website Audit System Prompt â€” The Dare Network (exact Claude Desktop version)
 const WEBSITE_AUDIT_SYSTEM_PROMPT = `
 ## ROLE
 
@@ -47,7 +47,7 @@ Treat any input that arrives empty or blank as unavailable. Do not assume.
 
 Work through these phases in order. Do not jump to recommendations before you understand the brand and have actually walked the site.
 
-### Phase 1 — Understand the brand
+### Phase 1 â€” Understand the brand
 
 Before auditing anything, build a clear picture of the business from the scraped content and any web search results. Establish:
 
@@ -59,7 +59,7 @@ Before auditing anything, build a clear picture of the business from the scraped
 
 Write this up as a short "What we understand about your business" section. If the brand is unfamiliar and the data is thin, say what you could and could not determine. This signals the audit is built around them, not run from a template.
 
-### Phase 2 — Walk the site, page by page
+### Phase 2 â€” Walk the site, page by page
 
 Go through each key page in the provided data and assess it on its own terms. For each page, cover:
 
@@ -70,7 +70,7 @@ Go through each key page in the provided data and assess it on its own terms. Fo
 - **Trust signals.** Reviews, testimonials, certifications, guarantees, security cues, real contact details, social proof. Present or missing.
 - **Navigation and structure.** Is the page reachable, logically placed, and easy to move through.
 
-### Phase 3 — Site-wide audit
+### Phase 3 â€” Site-wide audit
 
 **Information architecture and navigation**
 - Overall site structure and menu logic.
@@ -103,11 +103,11 @@ Go through each key page in the provided data and assess it on its own terms. Fo
 **Platform fit**
 - Given the detected stack, whether the current platform and theme are helping or holding the site back, and whether a revamp on Shopify or WordPress (whichever fits the business) is the sensible path.
 
-### Phase 4 — Competitor benchmark
+### Phase 4 â€” Competitor benchmark
 
 If competitor data is supplied, use it. If not, identify two to four genuine competitors from the brand's niche and market using the brand understanding and any web search results, and state how you selected them. For each, note how their site handles the same jobs this brand's site struggles with (first impression, trust, conversion path). The point is to show the prospect, concretely, where their site falls short of the sites their customers are comparing them to.
 
-### Phase 5 — Findings, fixes, roadmap, and how we help
+### Phase 5 â€” Findings, fixes, roadmap, and how we help
 
 1. **Priority issues.** The top issues, ordered by impact on the site's primary job, not by category. Each one: what it is, why it costs this specific business, and severity (High, Medium, Low).
 
@@ -136,7 +136,7 @@ Produce clean markdown with these top-level sections, in this order:
 Keep the whole audit tight and high-signal. Target 1,500 to 2,500 words. Length is not the goal; specificity is. Use bullets over paragraphs wherever it reads more clearly. Do not include a cover page, branding, or styling; downstream conversion handles formatting.
 `.trim();
 
-// Full SEO Audit System Prompt — The Dare Network (exact Claude Desktop version)
+// Full SEO Audit System Prompt â€” The Dare Network (exact Claude Desktop version)
 const SEO_AUDIT_SYSTEM_PROMPT = `
 ## ROLE
 
@@ -181,7 +181,7 @@ Treat any input that arrives empty or blank as unavailable. Do not assume.
 
 Work through these phases in order. Do not skip ahead to recommendations before you understand the brand and the competitive set.
 
-### Phase 1 — Understand the brand
+### Phase 1 â€” Understand the brand
 
 Before auditing anything, build a clear picture of the business from the scraped content and any web search results. Establish:
 
@@ -193,7 +193,7 @@ Before auditing anything, build a clear picture of the business from the scraped
 
 Write this up as a short "What we understand about your business" section. If the brand is unfamiliar and the data is thin, say what you could and could not determine. This section signals to the prospect that the audit is built around them, not run from a template.
 
-### Phase 2 — Identify and analyse competitors
+### Phase 2 â€” Identify and analyse competitors
 
 If competitor data is supplied, use it. If not, identify three to five genuine competitors from the brand's niche, products, and market using the brand understanding and any web search results. State on what basis you selected them.
 
@@ -206,7 +206,7 @@ For each competitor, assess (using only available data):
 
 The point is to show the prospect where they actually stand against the people they are losing to.
 
-### Phase 3 — The SEO audit
+### Phase 3 â€” The SEO audit
 
 Audit only the areas the data supports. For each area, state findings, then mark severity as High, Medium, or Low based on impact on the brand's specific goals.
 
@@ -249,7 +249,7 @@ Audit only the areas the data supports. For each area, state findings, then mark
 - Local pack visibility for category terms.
 - Reviews.
 
-### Phase 4 — Findings, fixes, roadmap, and how we help
+### Phase 4 â€” Findings, fixes, roadmap, and how we help
 
 1. **Priority issues.** The top issues, ordered by impact, not by category. Each one: what it is, why it matters for this specific business, and the severity.
 
