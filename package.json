@@ -11,7 +11,7 @@
     "dev:trigger": "npx trigger.dev@latest dev"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.22.0",
+    "@anthropic-ai/sdk": "^0.100.1",
     "@trigger.dev/sdk": "4.4.6",
     "cheerio": "^1.0.0-rc.12",
     "dotenv": "^16.4.5",
