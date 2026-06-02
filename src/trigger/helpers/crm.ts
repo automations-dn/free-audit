@@ -19,7 +19,7 @@ async function getZohoAccessToken(): Promise<string> {
     throw new Error("Zoho CRM OAuth credentials missing in environment variables.");
   }
 
-  const url = `https://accounts.zoho.com/oauth/v2/token?refresh_token=${refreshToken}&client_id=${clientId}&client_secret=${clientSecret}&grant_type=refresh_token`;
+  const url = `https://accounts.zoho.in/oauth/v2/token?refresh_token=${refreshToken}&client_id=${clientId}&client_secret=${clientSecret}&grant_type=refresh_token`;
 
   try {
     const response = await fetch(url, { method: "POST" });
@@ -62,7 +62,7 @@ export async function createZohoBiginDeal(lead: LeadData): Promise<void> {
 
     // Step 1: Search or Create Account (Company)
     let accountId = "";
-    const searchAccountUrl = `https://www.zohoapis.com/bigin/v1/Accounts/search?word=${encodeURIComponent(lead.company_name)}`;
+    const searchAccountUrl = `https://www.zohoapis.in/bigin/v1/Accounts/search?word=${encodeURIComponent(lead.company_name)}`;
     const searchAccountRes = await fetch(searchAccountUrl, { headers });
     const searchAccountData: any = await searchAccountRes.json();
 
@@ -70,7 +70,7 @@ export async function createZohoBiginDeal(lead: LeadData): Promise<void> {
       accountId = searchAccountData.data[0].id;
       console.log(`âœ… Existing Zoho Account found: ${accountId}`);
     } else {
-      const createAccountUrl = "https://www.zohoapis.com/bigin/v1/Accounts";
+      const createAccountUrl = "https://www.zohoapis.in/bigin/v1/Accounts";
       const accountBody = {
         data: [
           {
@@ -98,7 +98,7 @@ export async function createZohoBiginDeal(lead: LeadData): Promise<void> {
 
     // Step 2: Search or Create Contact
     let contactId = "";
-    const searchContactUrl = `https://www.zohoapis.com/bigin/v1/Contacts/search?email=${encodeURIComponent(lead.email)}`;
+    const searchContactUrl = `https://www.zohoapis.in/bigin/v1/Contacts/search?email=${encodeURIComponent(lead.email)}`;
     const searchContactRes = await fetch(searchContactUrl, { headers });
     const searchContactData: any = await searchContactRes.json();
 
@@ -106,7 +106,7 @@ export async function createZohoBiginDeal(lead: LeadData): Promise<void> {
       contactId = searchContactData.data[0].id;
       console.log(`âœ… Existing Zoho Contact found: ${contactId}`);
     } else {
-      const createContactUrl = "https://www.zohoapis.com/bigin/v1/Contacts";
+      const createContactUrl = "https://www.zohoapis.in/bigin/v1/Contacts";
       const contactBody = {
         data: [
           {
@@ -137,7 +137,7 @@ export async function createZohoBiginDeal(lead: LeadData): Promise<void> {
     }
 
     // Step 3: Create Deal associated with the Account & Contact
-    const createDealUrl = "https://www.zohoapis.com/bigin/v1/Deals";
+    const createDealUrl = "https://www.zohoapis.in/bigin/v1/Deals";
     const dealBody: any = {
       data: [
         {
@@ -181,4 +181,5 @@ export async function createZohoBiginDeal(lead: LeadData): Promise<void> {
     throw new Error(`Failed to update Zoho Bigin CRM: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
+
 

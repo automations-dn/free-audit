@@ -1,21 +1,21 @@
 ﻿/**
  * n8n MCP Client
  *
- * Calls tools exposed by the n8n MCP Server Trigger workflow via the
- * Streamable HTTP transport (POST to base URL with JSON-RPC body).
- * Falls back to parsing SSE responses if n8n returns text/event-stream.
+ * Implements the full MCP handshake (initialize -> notifications/initialized -> tools/call).
+ * Handles both JSON and SSE (text/event-stream) responses from n8n.
  *
  * Required env var: N8N_MCP_URL
+ * Optional env var: N8N_API_KEY  (sent as Bearer token if set)
  *
- * Tools this module expects in your n8n MCP workflow:
+ * Tools expected in your n8n MCP workflow:
  *
- *   Tool: "log_lead"
- *   Input: { company_name, website_url, email, phone, audit_type, timestamp }
- *   Action: Append a row to Google Sheets
+ *   "log_lead"
+ *     Input: { company_name, website_url, email, phone, audit_type, timestamp }
+ *     Action: Append row to Google Sheets
  *
- *   Tool: "send_audit_email"
- *   Input: { to_email, company_name, website_url, audit_type, audit_html }
- *   Action: Send email via Gmail/SMTP with audit_html as the body
+ *   "send_audit_email"
+ *     Input: { to_email, company_name, website_url, audit_type, audit_html }
+ *     Action: Send email via Gmail / SMTP with audit_html as the body
  */
 
 export interface LeadData {
@@ -26,7 +26,28 @@ export interface LeadData {
   audit_type: "website_audit" | "seo";
 }
 
-// Internal MCP caller -------------------------------------------------------
+// Parse a JSON-RPC response from either a JSON body or an SSE stream ----------
+
+async function parseJsonRpcResponse<T>(
+  response: Response
+): Promise<{ result?: T; error?: { message: string; code?: number } }> {
+  const contentType = response.headers.get("Content-Type") ?? "";
+
+  if (contentType.includes("text/event-stream")) {
+    const text = await response.text();
+    for (const line of text.split("\n")) {
+      if (!line.startsWith("data: ")) continue;
+      const trimmed = line.slice(6).trim();
+      if (!trimmed || trimmed === "[DONE]") continue;
+      return JSON.parse(trimmed) as { result?: T; error?: { message: string } };
+    }
+    throw new Error("n8n MCP SSE response contained no data lines");
+  }
+
+  return response.json() as Promise<{ result?: T; error?: { message: string } }>;
+}
+
+// Internal MCP caller — initialize + tools/call sequence ---------------------
 
 async function callN8nMcpTool<T = unknown>(
   toolName: string,
@@ -35,58 +56,78 @@ async function callN8nMcpTool<T = unknown>(
   const url = process.env.N8N_MCP_URL;
   if (!url) throw new Error("N8N_MCP_URL is not set in environment variables.");
 
-  const body = JSON.stringify({
-    jsonrpc: "2.0",
-    id: `${toolName}-${Date.now()}`,
-    method: "tools/call",
-    params: { name: toolName, arguments: args },
+  const apiKey = process.env.N8N_API_KEY;
+  const baseHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json, text/event-stream",
+    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+  };
+
+  // ── Step 1: initialize ────────────────────────────────────────────────────
+  const initRes = await fetch(url, {
+    method: "POST",
+    headers: baseHeaders,
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: "init-1",
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "free-audit-backend", version: "1.0.0" },
+      },
+    }),
+    signal: AbortSignal.timeout(15_000),
   });
 
-  const apiKey = process.env.N8N_API_KEY;
-  const authHeaders: Record<string, string> = apiKey
-    ? { Authorization: `Bearer ${apiKey}` }
-    : {};
+  if (!initRes.ok) {
+    const text = await initRes.text();
+    throw new Error(`n8n MCP initialize failed (HTTP ${initRes.status}): ${text}`);
+  }
 
-  const response = await fetch(url, {
+  const sessionId = initRes.headers.get("Mcp-Session-Id");
+  const sessionHeaders: Record<string, string> = sessionId
+    ? { ...baseHeaders, "Mcp-Session-Id": sessionId }
+    : baseHeaders;
+
+  const initJson = await parseJsonRpcResponse(initRes);
+  if (initJson.error) {
+    throw new Error(`n8n MCP initialize error: ${initJson.error.message}`);
+  }
+
+  // ── Step 2: notifications/initialized ────────────────────────────────────
+  await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-      ...authHeaders,
-    },
-    body,
+    headers: sessionHeaders,
+    body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => {});  // fire-and-forget
+
+  // ── Step 3: tools/call ────────────────────────────────────────────────────
+  const toolRes = await fetch(url, {
+    method: "POST",
+    headers: sessionHeaders,
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: `${toolName}-${Date.now()}`,
+      method: "tools/call",
+      params: { name: toolName, arguments: args },
+    }),
     signal: AbortSignal.timeout(30_000),
   });
 
-  if (!response.ok) {
-    const text = await response.text();
+  if (!toolRes.ok) {
+    const text = await toolRes.text();
     throw new Error(
-      `n8n MCP returned HTTP ${response.status} for tool "${toolName}": ${text}`
+      `n8n MCP returned HTTP ${toolRes.status} for tool "${toolName}": ${text}`
     );
   }
 
-  const contentType = response.headers.get("Content-Type") ?? "";
-
-  if (contentType.includes("text/event-stream")) {
-    const text = await response.text();
-    for (const line of text.split("\n")) {
-      if (!line.startsWith("data: ")) continue;
-      const data = JSON.parse(line.slice(6)) as {
-        result?: T;
-        error?: { message: string };
-      };
-      if (data.error) throw new Error(`n8n MCP tool error: ${data.error.message}`);
-      if (data.result !== undefined) return data.result;
-    }
-    throw new Error(`n8n MCP: no result in SSE stream for tool "${toolName}"`);
-  }
-
-  const json = (await response.json()) as {
-    result?: T;
-    error?: { message: string; code?: number };
-  };
+  const json = await parseJsonRpcResponse<T>(toolRes);
   if (json.error) {
-    throw new Error(`n8n MCP tool error: ${json.error.message ?? JSON.stringify(json.error)}`);
+    throw new Error(
+      `n8n MCP tool error (${toolName}): ${json.error.message ?? JSON.stringify(json.error)}`
+    );
   }
   return json.result as T;
 }
@@ -95,13 +136,12 @@ async function callN8nMcpTool<T = unknown>(
 
 export async function logLeadToSheet(lead: LeadData): Promise<void> {
   console.log(`Logging lead to sheet via n8n MCP: ${lead.company_name}`);
-  await callN8nMcpTool("log_lead", {
-    company_name: lead.company_name,
-    website_url: lead.website_url,
-    email: lead.email,
-    phone: lead.phone,
-    audit_type: lead.audit_type === "website_audit" ? "Website Audit" : "SEO Audit",
-    timestamp: new Date().toISOString(),
+  await callN8nMcpTool("Append_row_in_sheet_in_Google_Sheets", {
+    Company_Name: lead.company_name,
+    Website: lead.website_url,
+    Phone_no: lead.phone,
+    Email: lead.email,
+    Service: lead.audit_type === "website_audit" ? "Website Audit" : "SEO Audit",
   });
   console.log(`Lead logged: ${lead.company_name}`);
 }
@@ -109,12 +149,13 @@ export async function logLeadToSheet(lead: LeadData): Promise<void> {
 export async function sendAuditEmail(lead: LeadData, auditMarkdown: string): Promise<void> {
   console.log(`Sending audit email via n8n MCP to: ${lead.email}`);
   const auditHtml = convertMarkdownToEmailHtml(auditMarkdown, lead.company_name);
-  await callN8nMcpTool("send_audit_email", {
-    to_email: lead.email,
-    company_name: lead.company_name,
-    website_url: lead.website_url,
-    audit_type: lead.audit_type === "website_audit" ? "Website Audit" : "SEO Audit",
-    audit_html: auditHtml,
+  const auditLabel = lead.audit_type === "website_audit"
+    ? "Website & Conversion Audit"
+    : "SEO & Search Rankings Audit";
+  await callN8nMcpTool("Send_a_message_in_Gmail", {
+    To: lead.email,
+    Subject: `Your Complimentary ${auditLabel} is Ready — ${lead.company_name}`,
+    Message: auditHtml,
   });
   console.log(`Audit email dispatched to: ${lead.email}`);
 }
@@ -185,9 +226,7 @@ export function convertMarkdownToEmailHtml(md: string, companyName: string): str
           '<ul style="margin:10px 0 15px 20px;padding:0;font-family:Arial,sans-serif;font-size:14px;line-height:1.6;">'
         );
       }
-      output.push(
-        `<li style="margin-bottom:5px;color:#374151;">${trimmed.substring(2)}</li>`
-      );
+      output.push(`<li style="margin-bottom:5px;color:#374151;">${trimmed.substring(2)}</li>`);
     } else if (isOl) {
       if (!inList || listTag !== "ol") {
         if (inList) output.push(`</${listTag}>`);
@@ -244,4 +283,5 @@ export function convertMarkdownToEmailHtml(md: string, companyName: string): str
 </body>
 </html>`;
 }
+
 
