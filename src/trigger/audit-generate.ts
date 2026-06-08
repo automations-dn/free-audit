@@ -288,7 +288,7 @@ function buildHtmlDocument(
 
 export const auditGenerate = task({
   id: "audit-generate",
-  maxDuration: 300,
+  maxDuration: 600,
   retry: { maxAttempts: 1 },
 
   run: async (payload: AuditTaskPayload) => {
@@ -351,4 +351,5 @@ export const auditGenerate = task({
     };
   },
 });
+
 

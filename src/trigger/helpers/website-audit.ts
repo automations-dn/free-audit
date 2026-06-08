@@ -123,9 +123,9 @@ A numbered list of the most important things you need the client to answer befor
   try {
     const anthropic = new Anthropic({ apiKey });
 
-    const response = await anthropic.messages.create({
+    const stream = anthropic.messages.stream({
       model: "claude-opus-4-8",
-      max_tokens: 8000,
+      max_tokens: 32000,
       tools: [{ type: "web_search_20250305" as any, name: "web_search" }],
       system: [
         {
@@ -136,6 +136,8 @@ A numbered list of the most important things you need the client to answer befor
       ],
       messages: [{ role: "user", content: userPrompt }],
     });
+
+    const response = await stream.finalMessage();
 
     const textBlocks = response.content.filter((b) => b.type === "text");
     const text = textBlocks.map((b) => (b as any).text as string).join("\n");
@@ -148,5 +150,7 @@ A numbered list of the most important things you need the client to answer befor
     throw error;
   }
 }
+
+
 
 
