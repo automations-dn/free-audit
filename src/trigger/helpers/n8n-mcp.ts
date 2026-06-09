@@ -166,7 +166,7 @@ export async function uploadAuditToGoogleDrive(
 
   const result = await callN8nMcpTool<unknown>("Upload_file_in_Google_Drive", {
     File_Name:    filename,
-    File_Content: Buffer.from(htmlContent).toString("base64"),
+    HTML_Content: htmlContent,
     Folder_ID:    process.env.GOOGLE_DRIVE_FOLDER_ID ?? "",
     MIME_Type:    "text/html",
   });
