@@ -164,13 +164,18 @@ export async function uploadAuditToGoogleDrive(
 ): Promise<string> {
   console.log(`Uploading to Google Drive: ${filename}`);
 
+  // Convert HTML → base64 here in Trigger.dev.
+  // n8n receives HTML_Content_Base64 as a string, then a "Convert to File" node
+  // (GUI node, no code) decodes it to binary for the Google Drive Upload node.
+  // Input_Data_Field_Name tells the Drive node which binary field to read ("data").
+  const base64Html = Buffer.from(htmlContent, "utf-8").toString("base64");
+
   const result = await callN8nMcpTool<unknown>("Upload_file_in_Google_Drive", {
-    Input_Data_Field_Name: "data",          // required by n8n Drive node schema
+    Input_Data_Field_Name: "data",
     File_Name:             filename,
-    HTML_Content:          htmlContent,     // Code node in n8n converts this to binary
+    HTML_Content_Base64:   base64Html,
     Folder_ID:             process.env.GOOGLE_DRIVE_FOLDER_ID ?? "",
-    MIME_Type:             "text/html",
-  });
+  }, { timeoutMs: 90_000 });
 
   const fileUrl = extractDriveUrl(result);
   if (!fileUrl) {
