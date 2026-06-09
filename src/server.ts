@@ -1,197 +1,80 @@
 import express from "express";
 import dotenv from "dotenv";
-import { tasks, wait } from "@trigger.dev/sdk";
-import { z } from "zod";
-import crypto from "crypto";
+import { wait } from "@trigger.dev/sdk";
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Capture raw body for signature verification
-app.use(
-  express.json({
-    verify: (req: any, res, buf) => {
-      req.rawBody = buf.toString();
-    },
-  })
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ── GET /health ───────────────────────────────────────────────────────────────
+app.get("/health", (_req, res) =>
+  res.json({ status: "ok", time: new Date().toISOString() })
 );
 
-app.use(
-  express.urlencoded({
-    extended: true,
-    verify: (req: any, res, buf) => {
-      req.rawBody = buf.toString();
-    },
-  })
-);
+// ── GET /api/approve ──────────────────────────────────────────────────────────
+// Not used in the n8n-driven flow (n8n handles Slack approval internally).
+// Keep this as a fallback in case you want a simple link-click approval flow.
+app.get("/api/approve", async (req, res) => {
+  const { token, approved, secret } = req.query;
 
-// Slack Signature Verification Middleware
-function verifySlackSignature(req: any, res: any, next: any) {
-  const signingSecret = process.env.SLACK_SIGNING_SECRET;
-  
-  // Dev fallback: skip verification if secret is not set or using placeholder
-  if (!signingSecret || signingSecret === "placeholder-signing-secret") {
-    console.log("⚠️ Slack Signature Verification skipped (no secret or placeholder used)");
-    return next();
+  if (!process.env.WEBHOOK_SECRET || secret !== process.env.WEBHOOK_SECRET) {
+    return res.status(401).send(htmlPage("Unauthorized", "Invalid security token.", "#dc2626", "❌"));
+  }
+  if (!token) {
+    return res.status(400).send(htmlPage("Bad Request", "Missing token.", "#dc2626", "⚠️"));
   }
 
-  const signature = req.headers["x-slack-signature"];
-  const timestamp = req.headers["x-slack-request-timestamp"];
-
-  if (!signature || !timestamp) {
-    return res.status(401).send("Unauthorized: Missing signature or timestamp headers");
-  }
-
-  // Prevent replay attacks (reject timestamps older than 5 minutes)
-  const fiveMinutesAgo = Math.floor(Date.now() / 1000) - 60 * 5;
-  if (parseInt(timestamp as string, 10) < fiveMinutesAgo) {
-    return res.status(401).send("Unauthorized: Replay attack protection triggered (timestamp expired)");
-  }
-
-  const rawBody = req.rawBody || "";
-  const sigBaseString = `v0:${timestamp}:${rawBody}`;
-  const mySignature =
-    "v0=" +
-    crypto
-      .createHmac("sha256", signingSecret)
-      .update(sigBaseString, "utf8")
-      .digest("hex");
-
+  const isApproved = approved === "true";
   try {
-    if (
-      crypto.timingSafeEqual(
-        Buffer.from(mySignature, "utf8"),
-        Buffer.from(signature as string, "utf8")
+    await wait.completeToken(String(token), { approved: isApproved, reviewer: "slack-link" });
+    return res.send(
+      htmlPage(
+        isApproved ? "Approved" : "Rejected",
+        isApproved
+          ? "The request has been approved. The workflow will continue automatically."
+          : "The request has been rejected. The workflow has stopped.",
+        isApproved ? "#16a34a" : "#dc2626",
+        isApproved ? "✅" : "❌"
       )
-    ) {
-      return next();
-    }
+    );
   } catch (err) {
-    // Fallback if timingSafeEqual fails due to length mismatch
+    console.error("Token completion error:", err);
+    return res.status(500).send(
+      htmlPage("Error", "Could not record your decision. The link may have already been used or expired.", "#d97706", "⚠️")
+    );
   }
+});
 
-  return res.status(401).send("Unauthorized: Invalid signature");
+// ── HTML response helper ──────────────────────────────────────────────────────
+function htmlPage(title: string, message: string, color: string, emoji: string): string {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<title>${title} — The Dare Network</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+       background:#f8fafc;display:flex;align-items:center;justify-content:center;min-height:100vh}
+  .card{background:#fff;border-radius:14px;padding:52px 48px;text-align:center;
+        max-width:480px;width:90%;box-shadow:0 4px 32px rgba(0,0,0,.09)}
+  .icon{font-size:52px;margin-bottom:18px}
+  h2{color:${color};font-size:26px;margin-bottom:12px;font-weight:700}
+  p{color:#64748b;font-size:15px;line-height:1.65}
+  .brand{color:#94a3b8;font-size:11px;margin-top:36px;letter-spacing:1.5px;text-transform:uppercase}
+</style></head>
+<body><div class="card">
+  <div class="icon">${emoji}</div>
+  <h2>${title}</h2>
+  <p>${message}</p>
+  <div class="brand">The Dare Network — Audit System</div>
+</div></body></html>`;
 }
 
-// Zod Input Validation for WordPress Webhook
-const wordpressPayloadSchema = z.object({
-  website_url: z.string().url("Invalid website URL format"),
-  company_name: z.string().min(1, "Company Name is required"),
-  email: z.string().email("Invalid email format"),
-  phone: z.string().min(5, "Valid phone number is required"),
-  audit_type: z.enum(["website_audit", "seo"], {
-    errorMap: () => ({ message: "Audit Type must be 'website_audit' or 'seo'" }),
-  }),
-});
-
-// Endpoint 1: Receive WordPress Form Webhook
-app.post("/api/webhook/wordpress", async (req, res) => {
-  try {
-    console.log("📥 Received WordPress Form Submission:", req.body);
-    
-    // Validate request body
-    const validatedData = wordpressPayloadSchema.parse(req.body);
-
-    // Trigger the main workflow task
-    const handle = await tasks.trigger("free-audit-workflow", validatedData);
-
-    console.log(`🚀 Triggered task 'free-audit-workflow' with run ID: ${handle.id}`);
-    
-    return res.status(200).json({
-      success: true,
-      message: "Lead successfully captured and task triggered.",
-      runId: handle.id,
-    });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
-        errors: error.errors.map((e) => e.message),
-      });
-    }
-    
-    console.error("❌ Error triggering task:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error triggering workflow.",
-    });
-  }
-});
-
-// Endpoint 2: Receive Slack Interactive Button Clicks
-app.post("/api/webhook/slack-interactivity", verifySlackSignature, async (req, res) => {
-  try {
-    if (!req.body.payload) {
-      return res.status(400).send("Bad Request: Missing payload");
-    }
-
-    const payload = JSON.parse(req.body.payload);
-    
-    // Handle block actions
-    if (payload.type === "block_actions" && payload.actions && payload.actions[0]) {
-      const action = payload.actions[0];
-      const actionValue = JSON.parse(action.value);
-      
-      const { tokenId, decision } = actionValue;
-      const username = payload.user.name;
-
-      console.log(`🔘 Slack interaction from @${username}: Decision = ${decision}, TokenId = ${tokenId}`);
-
-      // Complete the token in Trigger.dev
-      await wait.completeToken(tokenId, {
-        approved: decision === "approve",
-        reviewer: username,
-      });
-
-      // Update the Slack message to remove buttons and show reviewer decision
-      if (payload.response_url) {
-        let updatedBlocks = payload.message.blocks;
-        
-        // Remove the action block (usually the last block or block with elements)
-        updatedBlocks = updatedBlocks.filter((block: any) => block.type !== "actions");
-        
-        // Add a context/divider section showing who made the decision
-        const statusEmoji = decision === "approve" ? "✅ APPROVED" : "❌ DECLINED";
-        updatedBlocks.push({
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*Status:* ${statusEmoji} by @${username}`,
-          },
-        });
-
-        await fetch(payload.response_url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            replace_original: "true",
-            blocks: updatedBlocks,
-          }),
-        });
-      }
-
-      // Return a 200 OK immediately to Slack
-      return res.status(200).send();
-    }
-
-    return res.status(400).send("Unhandled interaction type");
-  } catch (error) {
-    console.error("❌ Error handling Slack interactivity:", error);
-    return res.status(500).send("Internal server error");
-  }
-});
-
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "healthy", timestamp: new Date() });
-});
-
+// ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`🟢 Express Webhook Server is running on port ${PORT}`);
-  console.log(`🔗 WordPress Endpoint: http://localhost:${PORT}/api/webhook/wordpress`);
-  console.log(`🔗 Slack Interactivity: http://localhost:${PORT}/api/webhook/slack-interactivity`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`  Health : GET  http://localhost:${PORT}/health`);
+  console.log(`  Approve: GET  http://localhost:${PORT}/api/approve`);
 });
