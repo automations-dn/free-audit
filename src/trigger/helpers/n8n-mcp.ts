@@ -165,10 +165,11 @@ export async function uploadAuditToGoogleDrive(
   console.log(`Uploading to Google Drive: ${filename}`);
 
   const result = await callN8nMcpTool<unknown>("Upload_file_in_Google_Drive", {
-    File_Name:    filename,
-    HTML_Content: htmlContent,
-    Folder_ID:    process.env.GOOGLE_DRIVE_FOLDER_ID ?? "",
-    MIME_Type:    "text/html",
+    Input_Data_Field_Name: "data",          // required by n8n Drive node schema
+    File_Name:             filename,
+    HTML_Content:          htmlContent,     // Code node in n8n converts this to binary
+    Folder_ID:             process.env.GOOGLE_DRIVE_FOLDER_ID ?? "",
+    MIME_Type:             "text/html",
   });
 
   const fileUrl = extractDriveUrl(result);

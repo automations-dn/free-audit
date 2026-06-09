@@ -1,6 +1,6 @@
 import { task } from "@trigger.dev/sdk";
 import { z } from "zod";
-import { uploadAuditToGoogleDrive } from "./helpers/n8n-mcp.js";
+import { uploadHtmlToDrive } from "./helpers/google-drive.js";
 import { auditGenerate } from "./audit-generate.js";
 
 // ── Payload schema ────────────────────────────────────────────────────────────
@@ -59,10 +59,14 @@ export const freeAuditWorkflow = task({
     const { htmlContent, filename } = auditResult.output;
     console.log(`Audit generated — ${htmlContent.length.toLocaleString()} bytes`);
 
-    // ── Step 2: Upload to Google Drive via n8n MCP ────────────────────────────
+    // ── Step 2: Upload to Google Drive directly ───────────────────────────────
     console.log("Step 2: Uploading to Google Drive...");
     const driveFilename = filename ?? `${company_name.replace(/\s+/g, "-")}-${audit_type}-audit.html`;
-    const driveUrl = await uploadAuditToGoogleDrive(htmlContent, driveFilename);
+    const driveUrl = await uploadHtmlToDrive(
+      htmlContent,
+      driveFilename,
+      process.env.GOOGLE_DRIVE_FOLDER_ID ?? ""
+    );
     console.log(`Uploaded: ${driveUrl}`);
 
     // ── Step 3: Callback to n8n ───────────────────────────────────────────────
