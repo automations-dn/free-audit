@@ -632,13 +632,14 @@ export const auditGenerate = task({
     logger.info("Audit saved", { leadId: payload.leadId, filePath, htmlBytes: htmlContent.length });
 
     return {
-      success:     true,
-      leadId:      payload.leadId,
+      success:      true,
+      leadId:       payload.leadId,
       filePath,
       filename,
-      serviceType: payload.serviceType,
-      auditLength: auditMarkdown.length,
-      htmlContent,   // returned so audit-workflow can upload it to Google Drive
+      serviceType:  payload.serviceType,
+      auditLength:  auditMarkdown.length,
+      auditMarkdown, // raw markdown — used by Gamma to generate the document
+      htmlContent,   // HTML fallback
     };
   },
 });
