@@ -563,6 +563,199 @@ function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
+// ── Google Drive-optimised HTML ───────────────────────────────────────────────
+// Google Drive strips external CSS and class-based styles when converting HTML
+// to a Google Doc. This builder uses ONLY inline styles + semantic tags so the
+// heading hierarchy, table formatting, and text colours all survive the import.
+
+function markdownToGoogleDocHtml(md: string): string {
+  let html = md;
+
+  html = html
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // Severity / priority / status labels → inline-coloured spans
+  const hi  = 'style="color:#b91c1c;font-weight:700;background:#fee2e2;padding:1px 7px;border-radius:3px"';
+  const med = 'style="color:#92400e;font-weight:700;background:#fef3c7;padding:1px 7px;border-radius:3px"';
+  const lo  = 'style="color:#166534;font-weight:700;background:#dcfce7;padding:1px 7px;border-radius:3px"';
+
+  html = html.replace(/\bSeverity:\s*High\b/gi,    `Severity: <span ${hi}>High</span>`);
+  html = html.replace(/\bSeverity:\s*Medium\b/gi,  `Severity: <span ${med}>Medium</span>`);
+  html = html.replace(/\bSeverity:\s*Low\b/gi,     `Severity: <span ${lo}>Low</span>`);
+  html = html.replace(/\bPriority:\s*High\b/gi,    `Priority: <span ${hi}>High</span>`);
+  html = html.replace(/\bPriority:\s*Medium\b/gi,  `Priority: <span ${med}>Medium</span>`);
+  html = html.replace(/\bPriority:\s*Low\b/gi,     `Priority: <span ${lo}>Low</span>`);
+  html = html.replace(/\bStatus:\s*Critical\b/gi,  `Status: <span ${hi}>Critical</span>`);
+  html = html.replace(/\bStatus:\s*Pass\b/gi,      `Status: <span ${lo}>Pass</span>`);
+  html = html.replace(/\bStatus:\s*Fail\b/gi,      `Status: <span ${hi}>Fail</span>`);
+  html = html.replace(/\bStatus:\s*Warning\b/gi,   `Status: <span ${med}>Warning</span>`);
+
+  // Headings — Drive maps h1-h4 directly to its Heading 1-4 styles
+  html = html.replace(/^# (.*?)$/gm,    '<h1 style="color:#080e1a;font-size:18pt;border-bottom:2px solid #E53935;padding-bottom:6px;margin-top:32pt">$1</h1>');
+  html = html.replace(/^## (.*?)$/gm,   '<h2 style="color:#1e2a38;font-size:14pt;border-left:4px solid #E53935;padding-left:10px;margin-top:22pt">$1</h2>');
+  html = html.replace(/^### (.*?)$/gm,  '<h3 style="color:#2d3f52;font-size:12pt;margin-top:14pt">$1</h3>');
+  html = html.replace(/^#### (.*?)$/gm, '<h4 style="color:#7a90a8;font-size:10pt;text-transform:uppercase;letter-spacing:1px;margin-top:10pt">$1</h4>');
+
+  // Inline formatting
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong style="font-weight:700;color:#1e2a38">$1</strong>');
+  html = html.replace(/\*(.*?)\*/g,     '<em style="font-style:italic;color:#4b5563">$1</em>');
+  html = html.replace(/`(.*?)`/g,       '<code style="font-family:monospace;font-size:11pt;background:#f1f5f9;color:#c0392b;padding:1px 5px;border-radius:3px">$1</code>');
+
+  // Horizontal rules
+  html = html.replace(/^---$/gm, '<hr style="border:none;border-top:2px solid #e5eaf0;margin:32pt 0">');
+  html = html.replace(/^___$/gm, '<hr style="border:none;border-top:2px solid #e5eaf0;margin:32pt 0">');
+
+  // Tables — inline styles on every element so Drive preserves them
+  html = html.replace(/((?:\|.*\|\n)+)/g, (block) => {
+    const rows = block
+      .trim()
+      .split("\n")
+      .filter((r) => !/^\|[-|: ]+\|$/.test(r.trim()));
+    if (rows.length === 0) return block;
+
+    const [headerRow, ...bodyRows] = rows;
+
+    const th = headerRow
+      .split("|")
+      .filter((_, i, a) => i > 0 && i < a.length - 1)
+      .map((c) =>
+        `<th style="background-color:#080e1a;color:#ffffff;padding:10px 14px;text-align:left;font-size:10pt;font-weight:600;white-space:nowrap">${c.trim()}</th>`
+      )
+      .join("");
+
+    const tbody = bodyRows
+      .map((row, rowIdx) => {
+        const bg = rowIdx % 2 === 1 ? 'background-color:#f8fafc;' : '';
+        const tds = row
+          .split("|")
+          .filter((_, i, a) => i > 0 && i < a.length - 1)
+          .map((c) =>
+            `<td style="${bg}padding:10px 14px;border-bottom:1px solid #e5eaf0;font-size:11pt;vertical-align:top;color:#374151">${c.trim()}</td>`
+          )
+          .join("");
+        return `<tr>${tds}</tr>`;
+      })
+      .join("\n");
+
+    return (
+      `<div style="margin:20px 0;overflow-x:auto">` +
+      `<table style="border-collapse:collapse;width:100%;font-size:11pt">` +
+      `<thead><tr style="background-color:#080e1a">${th}</tr></thead>` +
+      `<tbody>${tbody}</tbody>` +
+      `</table></div>\n`
+    );
+  });
+
+  // Lists
+  const lines = html.split("\n");
+  const out: string[] = [];
+  let inUl = false;
+  let inOl = false;
+
+  for (const line of lines) {
+    const t = line.trim();
+    const isUl = t.startsWith("- ") || t.startsWith("* ");
+    const isOl = /^\d+\.\s/.test(t);
+
+    if (isUl) {
+      if (!inUl) { if (inOl) { out.push("</ol>"); inOl = false; } inUl = true; out.push('<ul style="margin:10px 0 16px;padding-left:24px">'); }
+      out.push(`<li style="color:#374151;font-size:11pt;margin:4px 0">${t.slice(2)}</li>`);
+    } else if (isOl) {
+      if (!inOl) { if (inUl) { out.push("</ul>"); inUl = false; } inOl = true; out.push('<ol style="margin:10px 0 16px;padding-left:24px">'); }
+      out.push(`<li style="color:#374151;font-size:11pt;margin:4px 0">${t.replace(/^\d+\.\s/, "")}</li>`);
+    } else {
+      if (inUl) { out.push("</ul>"); inUl = false; }
+      if (inOl) { out.push("</ol>"); inOl = false; }
+
+      if (t === "") {
+        out.push("");
+      } else if (
+        t.startsWith("<h") || t.startsWith("<div") || t.startsWith("<table") ||
+        t.startsWith("<ul") || t.startsWith("<ol") || t.startsWith("</") || t.startsWith("<hr")
+      ) {
+        out.push(t);
+      } else {
+        out.push(`<p style="font-size:11pt;color:#374151;line-height:1.7;margin-bottom:10px">${t}</p>`);
+      }
+    }
+  }
+  if (inUl) out.push("</ul>");
+  if (inOl) out.push("</ol>");
+
+  return out.join("\n");
+}
+
+function buildGoogleDocHtml(
+  contentHtml: string,
+  companyName: string,
+  websiteUrl: string,
+  serviceType: "seo" | "website",
+  auditDate: string
+): string {
+  const auditTitle =
+    serviceType === "seo" ? "SEO &amp; Search Rankings Audit" : "Website &amp; Conversion Audit";
+
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;margin:0;padding:0;color:#374151">
+
+<!-- ── Cover ── -->
+<table style="width:100%;border-collapse:collapse;margin-bottom:48px">
+  <tr>
+    <td style="background-color:#080e1a;padding:56px 64px 48px">
+      <p style="margin:0 0 12px;font-size:9pt;font-weight:700;color:#E53935;letter-spacing:3px">THE DARE NETWORK</p>
+      <p style="margin:0 0 10px;font-size:34pt;font-weight:700;color:#ffffff;line-height:1.05">${escapeHtml(companyName)}</p>
+      <p style="margin:0 0 36px;font-size:13pt;color:#5d8ab8;font-style:italic">${auditTitle}</p>
+      <table style="border-collapse:collapse;width:auto">
+        <tr>
+          <td style="padding:0 32px 0 0;border-right:1px solid rgba(255,255,255,0.1)">
+            <p style="margin:0;font-size:8pt;font-weight:700;color:#4a6a8a;text-transform:uppercase;letter-spacing:1px">Website</p>
+            <p style="margin:4px 0 0;font-size:11pt;color:#a8c4dd">${escapeHtml(websiteUrl)}</p>
+          </td>
+          <td style="padding:0 32px;border-right:1px solid rgba(255,255,255,0.1)">
+            <p style="margin:0;font-size:8pt;font-weight:700;color:#4a6a8a;text-transform:uppercase;letter-spacing:1px">Prepared By</p>
+            <p style="margin:4px 0 0;font-size:11pt;color:#a8c4dd">The Dare Network</p>
+          </td>
+          <td style="padding:0 32px;border-right:1px solid rgba(255,255,255,0.1)">
+            <p style="margin:0;font-size:8pt;font-weight:700;color:#4a6a8a;text-transform:uppercase;letter-spacing:1px">Date</p>
+            <p style="margin:4px 0 0;font-size:11pt;color:#a8c4dd">${escapeHtml(auditDate)}</p>
+          </td>
+          <td style="padding:0 0 0 32px">
+            <p style="margin:0;font-size:8pt;font-weight:700;color:#4a6a8a;text-transform:uppercase;letter-spacing:1px">Classification</p>
+            <p style="margin:4px 0 0;font-size:11pt;color:#a8c4dd">Confidential</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+
+<!-- ── Content ── -->
+<div style="padding:0 8px">
+${contentHtml}
+</div>
+
+<!-- ── Footer ── -->
+<table style="width:100%;border-collapse:collapse;margin-top:64px;border-top:2px solid #e5eaf0">
+  <tr>
+    <td style="background-color:#080e1a;padding:24px 48px">
+      <p style="margin:0;font-size:11pt;font-weight:700;color:#ffffff;letter-spacing:2px">THE DARE NETWORK</p>
+      <p style="margin:4px 0 0;font-size:9pt;color:#3d5a78">Growth Marketing &amp; Conversion Optimisation</p>
+    </td>
+    <td style="background-color:#080e1a;padding:24px 48px;text-align:right">
+      <p style="margin:0;font-size:9pt;color:#3d5a78">Prepared for ${escapeHtml(companyName)}</p>
+      <p style="margin:4px 0 0;font-size:9pt;color:#3d5a78">&copy; ${new Date().getFullYear()} The Dare Network. Confidential.</p>
+    </td>
+  </tr>
+</table>
+
+</body>
+</html>`;
+}
+
 // ── Trigger.dev task ─────────────────────────────────────────────────────────
 
 export const auditGenerate = task({
@@ -630,9 +823,20 @@ export const auditGenerate = task({
       year: "numeric",
     });
 
+    // Styled HTML (local inspection / PDF fallback)
     const contentHtml = markdownToHtml(auditMarkdown);
     const htmlContent = buildHtmlDocument(
       contentHtml,
+      payload.companyName,
+      payload.websiteUrl,
+      payload.serviceType,
+      auditDate
+    );
+
+    // Drive-optimised HTML — only inline styles survive Google Drive's HTML import
+    const googleDocContent = markdownToGoogleDocHtml(auditMarkdown);
+    const googleDocHtml = buildGoogleDocHtml(
+      googleDocContent,
       payload.companyName,
       payload.websiteUrl,
       payload.serviceType,
@@ -655,8 +859,9 @@ export const auditGenerate = task({
       filename,
       serviceType:  payload.serviceType,
       auditLength:  auditMarkdown.length,
-      auditMarkdown, // raw markdown — used by Gamma to generate the document
-      htmlContent,   // HTML fallback
+      auditMarkdown,  // raw markdown
+      htmlContent,    // beautifully styled HTML (local inspection / PDF)
+      googleDocHtml,  // Drive-optimised HTML → uploads as a native Google Doc
     };
   },
 });

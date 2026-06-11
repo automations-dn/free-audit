@@ -56,14 +56,16 @@ export const freeAuditWorkflow = task({
       throw new Error(`Audit generation failed: ${String(auditResult.error)}`);
     }
 
-    const { htmlContent, filename } = auditResult.output;
+    const { googleDocHtml, htmlContent, filename } = auditResult.output;
     console.log(`Audit generated — ${htmlContent.length.toLocaleString()} bytes`);
 
     // ── Step 2: Upload to Google Drive as a native Google Doc ─────────────────
+    // googleDocHtml uses only inline styles so headings, tables, and badge colours
+    // all survive Google Drive's HTML → Google Doc conversion.
     console.log("Step 2: Uploading to Google Drive as Google Doc...");
     const docTitle = `${company_name} — ${audit_type === "seo" ? "SEO Audit" : "Website Audit"}`;
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID ?? "";
-    const driveUrl = await uploadToGoogleDocs(htmlContent, docTitle, folderId);
+    const driveUrl = await uploadToGoogleDocs(googleDocHtml, docTitle, folderId);
     console.log(`Google Doc ready: ${driveUrl}`);
 
     // ── Step 3: Callback to n8n ───────────────────────────────────────────────
