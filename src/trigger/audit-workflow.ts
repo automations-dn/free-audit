@@ -1,6 +1,6 @@
 import { task } from "@trigger.dev/sdk";
 import { z } from "zod";
-import { uploadToGoogleDocs } from "./helpers/google-docs.js";
+import { uploadDocxToDrive } from "./helpers/google-docs.js";
 import { auditGenerate } from "./audit-generate.js";
 
 // ── Payload schema ────────────────────────────────────────────────────────────
@@ -56,17 +56,18 @@ export const freeAuditWorkflow = task({
       throw new Error(`Audit generation failed: ${String(auditResult.error)}`);
     }
 
-    const { googleDocHtml, htmlContent, filename } = auditResult.output;
-    console.log(`Audit generated — ${htmlContent.length.toLocaleString()} bytes`);
+    const { docxBase64, htmlContent } = auditResult.output;
+    console.log(`Audit generated — ${htmlContent.length.toLocaleString()} bytes HTML, ${docxBase64.length.toLocaleString()} chars docx`);
 
-    // ── Step 2: Upload to Google Drive as a native Google Doc ─────────────────
-    // googleDocHtml uses only inline styles so headings, tables, and badge colours
-    // all survive Google Drive's HTML → Google Doc conversion.
-    console.log("Step 2: Uploading to Google Drive as Google Doc...");
+    // ── Step 2: Upload native .docx to Google Drive ───────────────────────────
+    // Proper Word document — cover page, heading borders, dark table headers,
+    // colour-coded badges, page header/footer with page numbers.
+    console.log("Step 2: Uploading .docx to Google Drive...");
     const docTitle = `${company_name} — ${audit_type === "seo" ? "SEO Audit" : "Website Audit"}`;
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID ?? "";
-    const driveUrl = await uploadToGoogleDocs(googleDocHtml, docTitle, folderId);
-    console.log(`Google Doc ready: ${driveUrl}`);
+    const docxBuffer = Buffer.from(docxBase64, "base64");
+    const driveUrl = await uploadDocxToDrive(docxBuffer, docTitle, folderId);
+    console.log(`Drive document ready: ${driveUrl}`);
 
     // ── Step 3: Callback to n8n ───────────────────────────────────────────────
     if (callback_url) {

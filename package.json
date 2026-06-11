@@ -14,8 +14,10 @@
     "@anthropic-ai/sdk": "^0.100.1",
     "@trigger.dev/sdk": "4.4.5",
     "cheerio": "^1.0.0-rc.12",
+    "docx": "^9.7.1",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "googleapis": "^173.0.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -4,6 +4,7 @@ import path from "path";
 import { generateSEOAudit } from "./helpers/seo-audit.js";
 import { generateWebsiteAudit } from "./helpers/website-audit.js";
 import { fetchPageSpeedData, formatPageSpeedForPrompt } from "./helpers/pagespeed.js";
+import { buildAuditDocx } from "./helpers/docx-builder.js";
 
 interface AuditTaskPayload {
   leadId: string;
@@ -833,7 +834,7 @@ export const auditGenerate = task({
       auditDate
     );
 
-    // Drive-optimised HTML — only inline styles survive Google Drive's HTML import
+    // Drive-optimised HTML (fallback — kept for reference)
     const googleDocContent = markdownToGoogleDocHtml(auditMarkdown);
     const googleDocHtml = buildGoogleDocHtml(
       googleDocContent,
@@ -842,6 +843,17 @@ export const auditGenerate = task({
       payload.serviceType,
       auditDate
     );
+
+    // Native .docx — full formatting, dark cover, styled tables, page header/footer
+    logger.info("Building .docx document", { leadId: payload.leadId });
+    const docxBuffer = await buildAuditDocx(
+      auditMarkdown,
+      payload.companyName,
+      payload.websiteUrl,
+      payload.serviceType,
+      auditDate
+    );
+    logger.info("DOCX built", { bytes: docxBuffer.length });
 
     // Save to /tmp/audits/ for local inspection
     const outputDir = "/tmp/audits";
@@ -852,6 +864,9 @@ export const auditGenerate = task({
 
     logger.info("Audit saved", { leadId: payload.leadId, filePath, htmlBytes: htmlContent.length });
 
+    // Encode docx as base64 string so it can cross the task boundary
+    const docxBase64 = docxBuffer.toString("base64");
+
     return {
       success:      true,
       leadId:       payload.leadId,
@@ -859,9 +874,10 @@ export const auditGenerate = task({
       filename,
       serviceType:  payload.serviceType,
       auditLength:  auditMarkdown.length,
-      auditMarkdown,  // raw markdown
-      htmlContent,    // beautifully styled HTML (local inspection / PDF)
-      googleDocHtml,  // Drive-optimised HTML → uploads as a native Google Doc
+      auditMarkdown,
+      htmlContent,
+      googleDocHtml,
+      docxBase64,   // native .docx for uploading to Drive
     };
   },
 });

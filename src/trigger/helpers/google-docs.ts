@@ -118,6 +118,66 @@ async function makePublic(token: string, fileId: string): Promise<string> {
   return meta.webViewLink ?? `https://docs.google.com/document/d/${fileId}/view`;
 }
 
+// ── Upload .docx buffer to Google Drive ──────────────────────────────────────
+// Uploads a native Word document. Displays perfectly in Drive and opens in
+// Google Docs/Word. Preserves all formatting (fonts, colors, tables, etc.).
+
+export async function uploadDocxToDrive(
+  docxBuffer: Buffer,
+  title:      string,
+  folderId:   string
+): Promise<string> {
+  const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!saJson) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON is not set");
+
+  const sa    = JSON.parse(saJson) as ServiceAccount;
+  const token = await getAccessToken(sa);
+
+  const filename = title.endsWith(".docx") ? title : `${title}.docx`;
+  console.log(`Uploading "${filename}" to Google Drive…`);
+
+  const metadata = JSON.stringify({
+    name:    filename,
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    parents: folderId ? [folderId] : undefined,
+  });
+
+  const boundary = "docx_audit_boundary";
+  const body = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\n` +
+      `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+      `${metadata}\r\n` +
+      `--${boundary}\r\n` +
+      `Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document\r\n\r\n`
+    ),
+    docxBuffer,
+    Buffer.from(`\r\n--${boundary}--`),
+  ]);
+
+  const uploadRes = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name",
+    {
+      method:  "POST",
+      headers: {
+        Authorization:  `Bearer ${token}`,
+        "Content-Type": `multipart/related; boundary=${boundary}`,
+      },
+      body,
+      signal: AbortSignal.timeout(60_000),
+    }
+  );
+
+  const file = (await uploadRes.json()) as { id?: string; webViewLink?: string; error?: unknown };
+  if (!file.id) throw new Error(`Drive upload failed: ${JSON.stringify(file)}`);
+
+  const fileUrl = await makePublic(token, file.id);
+  console.log(`Drive upload complete: ${fileUrl}`);
+  return fileUrl;
+}
+
+// ── Upload HTML → native Google Doc (kept for fallback) ──────────────────────
+
 export async function uploadToGoogleDocs(
   htmlContent: string,
   title:       string,

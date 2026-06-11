@@ -1,6 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
-import { wait } from "@trigger.dev/sdk";
+import { wait, tasks } from "@trigger.dev/sdk";
 
 dotenv.config();
 
@@ -14,6 +14,64 @@ app.use(express.urlencoded({ extended: true }));
 app.get("/health", (_req, res) =>
   res.json({ status: "ok", time: new Date().toISOString() })
 );
+
+// ── POST /webhook/audit ───────────────────────────────────────────────────────
+// Called by n8n (or any HTTP client) to start an audit.
+// Returns immediately with run_id. The audit result is sent to callback_url
+// (the n8n Wait-node resumeUrl) when the workflow completes.
+//
+// Required body fields:
+//   website_url   — full URL of the site to audit
+//   company_name  — client company name
+//   audit_type    — "seo" | "website_audit"
+//   callback_url  — n8n $execution.resumeUrl (optional but needed for n8n)
+//
+// Optional header:
+//   x-webhook-secret — must match WEBHOOK_SECRET env var if set
+app.post("/webhook/audit", async (req, res) => {
+  // Optional secret validation
+  const secret = process.env.WEBHOOK_SECRET;
+  if (secret && req.headers["x-webhook-secret"] !== secret) {
+    return res.status(401).json({ error: "Invalid webhook secret" });
+  }
+
+  const { website_url, company_name, audit_type, callback_url } = req.body ?? {};
+
+  if (!website_url || !company_name || !audit_type) {
+    return res.status(400).json({
+      error: "Missing required fields",
+      required: ["website_url", "company_name", "audit_type"],
+      optional: ["callback_url"],
+    });
+  }
+
+  if (!["seo", "website_audit"].includes(audit_type)) {
+    return res.status(400).json({ error: "audit_type must be 'seo' or 'website_audit'" });
+  }
+
+  try {
+    const handle = await tasks.trigger("free-audit-workflow", {
+      website_url,
+      company_name,
+      audit_type,
+      callback_url: callback_url ?? null,
+    });
+
+    console.log(`Audit triggered: ${handle.id} for ${company_name} (${audit_type})`);
+
+    return res.json({
+      success:  true,
+      run_id:   handle.id,
+      message:  `Audit started for ${company_name}. Results will POST to callback_url when complete.`,
+      links: {
+        run: `https://cloud.trigger.dev/runs/${handle.id}`,
+      },
+    });
+  } catch (err) {
+    console.error("Webhook trigger error:", err);
+    return res.status(500).json({ error: "Failed to start audit", detail: String(err) });
+  }
+});
 
 // ── GET /api/approve ──────────────────────────────────────────────────────────
 // Not used in the n8n-driven flow (n8n handles Slack approval internally).
@@ -75,6 +133,7 @@ function htmlPage(title: string, message: string, color: string, emoji: string):
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`  Health : GET  http://localhost:${PORT}/health`);
-  console.log(`  Approve: GET  http://localhost:${PORT}/api/approve`);
+  console.log(`  Health  : GET  http://localhost:${PORT}/health`);
+  console.log(`  Webhook : POST http://localhost:${PORT}/webhook/audit`);
+  console.log(`  Approve : GET  http://localhost:${PORT}/api/approve`);
 });
