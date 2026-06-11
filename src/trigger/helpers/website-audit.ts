@@ -7,6 +7,7 @@ export interface AuditInput {
   primaryAudience: string;
   currentGoal: string;
   competitors?: string;
+  pageSpeedData?: string; // pre-fetched PageSpeed Insights data — injected verbatim into prompt
 }
 
 const SYSTEM_PROMPT = `
@@ -360,7 +361,7 @@ export async function generateWebsiteAudit(input: AuditInput): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
 
-  const { websiteUrl, companyName, industry, primaryAudience, currentGoal, competitors } = input;
+  const { websiteUrl, companyName, industry, primaryAudience, currentGoal, competitors, pageSpeedData } = input;
 
   const userPrompt = `Produce a complete, fully detailed website audit for the following business. Follow every section in your system prompt exactly. Read the actual website thoroughly before writing anything.
 
@@ -370,7 +371,7 @@ export async function generateWebsiteAudit(input: AuditInput): Promise<string> {
 **Primary Audience:** ${primaryAudience}
 **Current Goal:** ${currentGoal}
 ${competitors ? `**Competitors to reference:** ${competitors}` : ""}
-
+${pageSpeedData ? `\n${pageSpeedData}\n` : ""}
 MANDATORY RESEARCH STEPS BEFORE WRITING:
 1. Use web_search to load and read the homepage of ${websiteUrl} — extract the exact hero headline, subheadline, primary CTA text and destination, all navigation items, footer content, copyright year, every trust signal visible
 2. Use web_search to find and read every service or product page — note headings, approximate word count, internal links, CTAs, trust signals

@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { generateSEOAudit } from "./helpers/seo-audit.js";
 import { generateWebsiteAudit } from "./helpers/website-audit.js";
+import { fetchPageSpeedData, formatPageSpeedForPrompt } from "./helpers/pagespeed.js";
 
 interface AuditTaskPayload {
   leadId: string;
@@ -576,18 +577,33 @@ export const auditGenerate = task({
       serviceType: payload.serviceType,
     });
 
+    // ── Fetch PageSpeed data (non-blocking — audit continues even if it fails) ──
+    let pageSpeedData: string | undefined;
+    try {
+      logger.info("Fetching PageSpeed Insights data", { url: payload.websiteUrl });
+      const psData = await fetchPageSpeedData(payload.websiteUrl);
+      pageSpeedData = formatPageSpeedForPrompt(psData);
+      logger.info("PageSpeed fetched", {
+        mobile:  psData.mobile.score,
+        desktop: psData.desktop.score,
+      });
+    } catch (err) {
+      logger.warn("PageSpeed fetch failed — continuing without it", { error: String(err) });
+    }
+
     // Generate audit markdown
     let auditMarkdown: string;
 
     if (payload.serviceType === "seo") {
       logger.info("Calling generateSEOAudit", { leadId: payload.leadId });
       auditMarkdown = await generateSEOAudit({
-        websiteUrl:   payload.websiteUrl,
-        companyName:  payload.companyName,
-        industry:     payload.industry,
-        location:     payload.location,
-        targetMarket: payload.targetMarket,
-        services:     payload.services,
+        websiteUrl:    payload.websiteUrl,
+        companyName:   payload.companyName,
+        industry:      payload.industry,
+        location:      payload.location,
+        targetMarket:  payload.targetMarket,
+        services:      payload.services,
+        pageSpeedData,
       });
     } else {
       logger.info("Calling generateWebsiteAudit", { leadId: payload.leadId });
@@ -598,6 +614,7 @@ export const auditGenerate = task({
         primaryAudience: payload.primaryAudience ?? "",
         currentGoal:     payload.currentGoal ?? "",
         competitors:     payload.competitors,
+        pageSpeedData,
       });
     }
 

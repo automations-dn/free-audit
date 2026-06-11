@@ -1,6 +1,6 @@
 import { task } from "@trigger.dev/sdk";
 import { z } from "zod";
-import { createGammaDocument } from "./helpers/gamma.js";
+import { uploadToGoogleDocs } from "./helpers/google-docs.js";
 import { auditGenerate } from "./audit-generate.js";
 
 // ── Payload schema ────────────────────────────────────────────────────────────
@@ -56,18 +56,15 @@ export const freeAuditWorkflow = task({
       throw new Error(`Audit generation failed: ${String(auditResult.error)}`);
     }
 
-    const { htmlContent, auditMarkdown, filename } = auditResult.output;
+    const { htmlContent, filename } = auditResult.output;
     console.log(`Audit generated — ${htmlContent.length.toLocaleString()} bytes`);
 
-    // ── Step 2: Create Gamma document ─────────────────────────────────────────
-    console.log("Step 2: Creating Gamma document...");
+    // ── Step 2: Upload to Google Drive as a native Google Doc ─────────────────
+    console.log("Step 2: Uploading to Google Drive as Google Doc...");
     const docTitle = `${company_name} — ${audit_type === "seo" ? "SEO Audit" : "Website Audit"}`;
-    const driveUrl = await createGammaDocument(
-      auditMarkdown,
-      docTitle,
-      audit_type === "seo" ? "seo" : "website"
-    );
-    console.log(`Gamma document ready: ${driveUrl}`);
+    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID ?? "";
+    const driveUrl = await uploadToGoogleDocs(htmlContent, docTitle, folderId);
+    console.log(`Google Doc ready: ${driveUrl}`);
 
     // ── Step 3: Callback to n8n ───────────────────────────────────────────────
     if (callback_url) {

@@ -7,6 +7,7 @@ export interface AuditInput {
   location: string;
   targetMarket: string;
   services: string;
+  pageSpeedData?: string; // pre-fetched PageSpeed Insights data — injected verbatim into prompt
 }
 
 const SYSTEM_PROMPT = `
@@ -331,7 +332,7 @@ export async function generateSEOAudit(input: AuditInput): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
 
-  const { websiteUrl, companyName, industry, location, targetMarket, services } = input;
+  const { websiteUrl, companyName, industry, location, targetMarket, services, pageSpeedData } = input;
 
   const userPrompt = `Produce a complete, fully detailed SEO audit for the following business. Follow every section in your system prompt exactly. Read the actual website thoroughly before writing anything.
 
@@ -341,7 +342,7 @@ export async function generateSEOAudit(input: AuditInput): Promise<string> {
 **Location:** ${location}
 **Target Market:** ${targetMarket}
 **Services:** ${services}
-
+${pageSpeedData ? `\n${pageSpeedData}\n` : ""}
 MANDATORY RESEARCH STEPS BEFORE WRITING:
 1. Use web_search to load and read the homepage of ${websiteUrl} — extract the exact title tag, H1, meta description, nav items, CTA text, footer copy, copyright year
 2. Use web_search to find and read at least 3 service/product pages — note headings, approximate word count, internal links
